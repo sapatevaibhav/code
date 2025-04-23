@@ -1,7 +1,7 @@
 import os
 import chromadb
 import google.generativeai as genai
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -21,12 +21,17 @@ class CodeRAG:
         self.client = chromadb.PersistentClient(path=persist_directory)
 
         # Create or get collection
-        self.collection = self.client.get_or_create_collection(
-            name="code_snippets",
-            metadata={"hnsw:space": "cosine"}
-        )
+        try:
+            self.collection = self.client.get_collection(name="code_snippets")
+            print("Using existing collection")
+        except Exception:
+            print("Creating new collection")
+            self.collection = self.client.create_collection(
+                name="code_snippets",
+                metadata={"hnsw:space": "cosine"}
+            )
 
-        # Initialize Gemini model
+        # Initialize Gemini model - using the 2.0 Flash model
         self.model = genai.GenerativeModel('gemini-2.0-flash')
 
     def add_documents(self, code_elements: List[Dict[str, Any]]) -> None:
@@ -54,25 +59,54 @@ class CodeRAG:
 
         print(f"Added {len(code_elements)} code elements to the database.")
 
+    def clear_collection(self):
+        """Clear all documents from the collection by recreating it"""
+        try:
+            # Delete the collection completely
+            self.client.delete_collection("code_snippets")
+            print("Deleted existing collection")
+
+            # Create a new empty collection
+            self.collection = self.client.create_collection(
+                name="code_snippets",
+                metadata={"hnsw:space": "cosine"}
+            )
+            print("Created new empty collection")
+            return True
+        except Exception as e:
+            print(f"Error clearing collection: {str(e)}")
+            return False
+
     def search(self, query: str, n_results: int = 5) -> List[Dict[str, Any]]:
         """
         Search for relevant code elements based on query.
         """
-        results = self.collection.query(
-            query_texts=[query],
-            n_results=n_results,
-        )
+        try:
+            results = self.collection.query(
+                query_texts=[query],
+                n_results=n_results,
+            )
 
-        return [{
-            "id": results["ids"][0][i],
-            "document": results["documents"][0][i],
-            "metadata": results["metadatas"][0][i],
-        } for i in range(len(results["ids"][0]))]
+            if not results["ids"] or len(results["ids"][0]) == 0:
+                return []
 
-    def generate_response(self, query: str, context_docs: List[Dict[str, Any]]) -> str:
+            return [{
+                "id": results["ids"][0][i],
+                "document": results["documents"][0][i],
+                "metadata": results["metadatas"][0][i],
+            } for i in range(len(results["ids"][0]))]
+        except Exception as e:
+            print(f"Error during search: {str(e)}")
+            return []
+
+    def generate_response(self, query: str, context_docs: List[Dict[str, Any]]) -> Tuple[str, str]:
         """
         Generate a response using Gemini API based on query and retrieved context.
+        Returns both the response and the context sent to Gemini.
         """
+        if not context_docs:
+            return "No relevant code found to answer your question.", "No context available."
+
         # Create context from retrieved documents
         context = "\n\n".join([f"File: {doc['metadata']['file_path']}\n{doc['document']}"
                              for doc in context_docs])
@@ -92,16 +126,17 @@ class CodeRAG:
 
         # Generate response
         response = self.model.generate_content(prompt)
-        return response.text
+        return response.text, context
 
-    def process_query(self, query: str, n_results: int = 5) -> str:
+    def process_query(self, query: str, n_results: int = 5) -> Tuple[str, str]:
         """
         Process a user query by retrieving relevant code and generating a response.
+        Returns both the response and the context sent to Gemini.
         """
         # Search for relevant code
         search_results = self.search(query, n_results)
 
         # Generate response based on retrieved context
-        response = self.generate_response(query, search_results)
+        response, context = self.generate_response(query, search_results)
 
-        return response
+        return response, context
