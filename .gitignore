@@ -1,0 +1,7 @@
+__pycache__
+emv
+env
+venv
+.env
+data/*
+temp/*
