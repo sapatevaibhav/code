@@ -158,6 +158,16 @@ with st.sidebar:
         # Clean up
         cleanup_temp_files()
 
+        # Close the current ChromaDB connection before deleting
+        try:
+            # Properly close the database connection
+            if hasattr(st.session_state.rag, 'client') and st.session_state.rag.client:
+                st.session_state.rag.client.close()
+                # Also delete any persistent client instance
+                st.session_state.rag.client = None
+        except Exception as e:
+            st.warning(f"Error while closing database connection: {str(e)}")
+
         # Delete data directory
         if os.path.exists(DATA_DIR):
             try:
@@ -172,4 +182,4 @@ with st.sidebar:
         st.session_state.last_files_hash = ""
 
         st.success("Reset complete. App state has been cleared.")
-        st.experimental_rerun()
+        st.rerun()
