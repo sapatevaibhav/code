@@ -3,3 +3,8 @@ chromadb
 google-generativeai
 python-dotenv
 astunparse
+tiktoken
+tree-sitter
+psutil
+sentence_transformers
+scikit-learn

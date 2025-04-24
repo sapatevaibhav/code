@@ -3,6 +3,35 @@ import ast
 import astunparse
 import uuid
 from typing import Dict, List, Any
+import sys
+
+# Add the path to code-chunker if not already in path
+sys.path.append(os.path.join(os.path.dirname(__file__), 'lib'))
+from lib.code_chunker.Chunker import CodeChunker
+from lib.code_chunker.CodeParser import CodeParser
+from code_utils import count_tokens
+
+def get_supported_extensions() -> List[str]:
+    """
+    Get a list of file extensions supported by the code-chunker library.
+    If the CodeParser doesn't have get_supported_extensions method,
+    return a predefined list of common extensions.
+
+    Returns:
+        List[str]: List of supported file extensions with the dot prefix (e.g., ['.py', '.js'])
+    """
+    # Create a CodeParser instance
+    parser = CodeParser([])
+
+    # Try to get supported extensions from parser
+    try:
+        extensions = parser.get_supported_extensions()
+    except AttributeError:
+        # If method doesn't exist, use a predefined list of common extensions
+        extensions = ['py', 'js', 'java', 'ts', 'html', 'css', 'go', 'rb', 'php', 'cs', 'cpp', 'c']
+
+    # Add the dot prefix to extensions if not already present
+    return [f".{ext}" if not ext.startswith('.') else ext for ext in extensions]
 
 def extract_code_elements(file_path: str) -> List[Dict[str, Any]]:
     """
@@ -74,29 +103,37 @@ def extract_code_elements(file_path: str) -> List[Dict[str, Any]]:
 def process_non_python_file(file_path: str) -> List[Dict[str, Any]]:
     """Process non-Python files by chunking them appropriately"""
     try:
+        _, ext = os.path.splitext(file_path)
+        ext = ext.lstrip('.').lower()  # Remove the dot and convert to lowercase
+
+        # Read the file content
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
-        # For simplicity, chunk by logical sections if possible
-        # Basic chunking strategy - can be improved based on file type
-        chunks = []
-        lines = content.split('\n')
+        # Use the CodeChunker class as per documentation
+        chunker = CodeChunker(file_extension=ext, encoding_name='gpt-4')
+        chunks = chunker.chunk(content, token_limit=1000)
 
-        # Create chunks of max ~100 lines
-        chunk_size = 100
-        for i in range(0, len(lines), chunk_size):
-            chunk_content = '\n'.join(lines[i:i+chunk_size])
-            if chunk_content.strip():
-                chunks.append({
-                    "id": str(uuid.uuid4()),
-                    "type": "code_chunk",
-                    "code": chunk_content,
-                    "file_path": file_path,
-                    "line_range": f"{i+1}-{min(i+chunk_size, len(lines))}",
-                    "description": f"Code chunk (lines {i+1}-{min(i+chunk_size, len(lines))}) from {os.path.basename(file_path)}"
-                })
+        results = []
+        # The chunks are returned as a dict with chunk numbers as keys
+        for chunk_num, chunk_content in chunks.items():
+            # Count the lines for start and end line numbers
+            start_line = 1
+            if chunk_num > 1 and chunk_num-1 in chunks:
+                start_line = content[:content.find(chunks[chunk_num])].count('\n') + 1
+            end_line = start_line + chunk_content.count('\n')
 
-        return chunks
+            results.append({
+                "id": str(uuid.uuid4()),
+                "type": "code_chunk",
+                "code": chunk_content,
+                "file_path": file_path,
+                "chunk_number": chunk_num,
+                "line_range": f"{start_line}-{end_line}",
+                "description": f"Code chunk {chunk_num} (lines {start_line}-{end_line}) from {os.path.basename(file_path)}"
+            })
+
+        return results
 
     except Exception as e:
         print(f"Error processing {file_path}: {str(e)}")
@@ -105,11 +142,18 @@ def process_non_python_file(file_path: str) -> List[Dict[str, Any]]:
 def process_file(file_path: str) -> List[Dict[str, Any]]:
     """Process a single file based on its extension."""
     _, ext = os.path.splitext(file_path)
+    ext = ext.lower()  # Keep the dot prefix
 
-    if ext.lower() == '.py':
+    if ext == '.py':
         return extract_code_elements(file_path)
     else:
-        return process_non_python_file(file_path)
+        # Check if the extension is supported by the CodeChunker
+        supported_extensions = get_supported_extensions()
+        if ext in supported_extensions:
+            return process_non_python_file(file_path)
+        else:
+            print(f"Unsupported file extension: {ext}")
+            return []
 
 def index_files(file_paths: List[str]) -> List[Dict[str, Any]]:
     """

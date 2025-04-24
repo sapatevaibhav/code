@@ -1,0 +1,3 @@
+[submodule "lib/code_chunker"]
+	path = lib/code_chunker
+	url = https://github.com/CintraAI/code-chunker.git

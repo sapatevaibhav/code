@@ -172,4 +172,4 @@ with st.sidebar:
         st.session_state.last_files_hash = ""
 
         st.success("Reset complete. App state has been cleared.")
-        st.experimental_rerun()
+        st.rerun()
