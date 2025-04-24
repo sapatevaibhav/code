@@ -3,3 +3,5 @@ chromadb
 google-generativeai
 python-dotenv
 astunparse
+tree_sitter_language_pack
+tree_sitter
