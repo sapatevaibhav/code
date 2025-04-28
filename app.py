@@ -1,9 +1,8 @@
 import os
 import shutil
 import streamlit as st
-import google.generativeai as genai
 import atexit
-from code_indexer import index_files, process_file
+from code_indexer import index_files
 from rag_engine import CodeRAG
 from dotenv import load_dotenv
 

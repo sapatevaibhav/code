@@ -1,116 +1,15 @@
 import os
 import uuid
 from typing import Dict, List, Any, Optional
+import process_files
 
-# Remove direct Language, Parser import if only using the pack's functions
-# from tree_sitter import Language, Parser
-# Import the necessary functions from the language pack
 from tree_sitter_language_pack import (
     get_language as get_ts_language,
     get_parser as get_ts_parser,
     SupportedLanguage,
 )
-from tree_sitter import Language, Parser, Node  # Keep Node for type hints if needed
+from tree_sitter import Language, Parser
 
-# --- Tree-sitter Setup ---
-# LANGUAGE_LIB_PATH = 'build/languages.so' # Path to the built library <-- REMOVE/COMMENT OUT
-# Ensure the library exists before proceeding <-- REMOVE/COMMENT OUT
-# if not os.path.exists(LANGUAGE_LIB_PATH):
-#     raise RuntimeError(f"Language library not found at {LANGUAGE_LIB_PATH}. "
-#                      "Please run build_parsers.py first.") <-- REMOVE/COMMENT OUT
-
-# Map file extensions to tree-sitter language names
-# Ensure these names match the 'SupportedLanguage' literal type in tree_sitter_language_pack
-LANGUAGE_MAP: Dict[str, SupportedLanguage] = {
-    # Core Web
-    ".py": "python",
-    ".java": "java",
-    ".js": "javascript",
-    ".jsx": "javascript",  # JSX handled via tree-sitter-javascript
-    ".ts": "typescript",
-    ".tsx": "tsx",  # Requires separate grammar from tree-sitter-typescript
-    ".c": "c",
-    ".cpp": "cpp",
-    ".h": "c",
-    ".hpp": "cpp",
-    ".rb": "ruby",
-    ".go": "go",
-    ".rs": "rust",
-    ".php": "php",
-    ".cs": "csharp",
-    ".html": "html",
-    ".css": "css",
-    ".json": "json",
-    ".yaml": "yaml",
-    ".toml": "toml",
-
-    # Additional major languages
-    ".sh": "bash",
-    ".zsh": "bash",
-    ".swift": "swift",
-    ".kt": "kotlin",
-    ".scala": "scala",
-    ".pl": "perl",
-    ".pm": "perl",
-    ".r": "r",
-    ".lua": "lua",
-    ".sql": "sql",
-    ".hs": "haskell",
-    ".erl": "erlang",
-    ".ex": "elixir",
-    ".ml": "ocaml",
-    ".fs": "fsharp",
-    ".clj": "clojure",
-    ".dart": "dart",
-    ".groovy": "groovy",
-    ".jl": "julia",
-    ".scm": "scheme",
-    ".vim": "vimscript",
-    ".zig": "zig",
-    ".odin": "odin",
-
-    # Configuration/markup
-    ".xml": "xml",
-    ".md": "markdown",
-    ".rst": "rst",
-    ".tex": "latex",
-    ".nim": "nim",
-    ".pkl": "pkl",
-
-    # Modern web/extensions
-    ".vue": "vue",
-    ".svelte": "svelte",
-    ".graphql": "graphql",
-    ".proto": "proto",
-
-    # Scripting
-    ".ps1": "powershell",
-    ".jl": "julia",
-    ".tcl": "tcl",
-    ".m": "matlab",
-
-    # Shell configurations
-    ".bashrc": "bash",
-    ".zshrc": "bash",
-
-    # Special cases
-    ".Dockerfile": "dockerfile",
-    "Dockerfile": "dockerfile",
-    ".gitignore": "gitignore",
-    ".gitattributes": "gitattributes",
-    "Makefile": "make",
-
-    # Experimental/less common
-    ".wat": "wat",
-    ".wast": "wat",
-    ".ql": "ql",  # CodeQL
-    ".blade.php": "blade",
-    ".eex": "embedded_template",  # Elixir
-    ".heex": "embedded_template",  # Elixir
-}
-
-
-# Cache loaded languages/parsers (optional, pack might cache internally)
 LOADED_LANGUAGES: Dict[str, Language] = {}
 LOADED_PARSERS: Dict[str, Parser] = {}
 
@@ -135,9 +34,6 @@ def get_language_and_parser(
             print(f"Warning: Could not load language '{lang_name}' using pack: {e}")
             return None
     return LOADED_LANGUAGES.get(lang_name), LOADED_PARSERS.get(lang_name)
-
-
-# --- End Tree-sitter Setup ---
 
 
 def extract_elements_with_tree_sitter(
@@ -298,63 +194,13 @@ def extract_elements_with_tree_sitter(
     return elements
 
 
-def process_non_python_file(file_path: str) -> List[Dict[str, Any]]:
-    """Process non-Python files by chunking them appropriately"""
-    try:
-        with open(file_path, "r", encoding="utf-8") as f:
-            content = f.read()
-
-        # For simplicity, chunk by logical sections if possible
-        # Basic chunking strategy - can be improved based on file type
-        chunks = []
-        lines = content.split("\n")
-
-        # Create chunks of max ~100 lines
-        chunk_size = 100
-        for i in range(0, len(lines), chunk_size):
-            chunk_content = "\n".join(lines[i : i + chunk_size])
-            if chunk_content.strip():
-                chunks.append(
-                    {
-                        "id": str(uuid.uuid4()),
-                        "type": "code_chunk",
-                        "code": chunk_content,
-                        "file_path": file_path,
-                        "line_range": f"{i+1}-{min(i+chunk_size, len(lines))}",
-                        "description": f"Code chunk (lines {i+1}-{min(i+chunk_size, len(lines))}) from {os.path.basename(file_path)}",
-                    }
-                )
-
-        return chunks
-
-    except Exception as e:
-        print(f"Error processing {file_path}: {str(e)}")
-        return []
-
-
-def process_file(file_path: str) -> List[Dict[str, Any]]:
-    """Process a single file based on its extension using tree-sitter if available."""
-    _, ext = os.path.splitext(file_path)
-    lang_name = LANGUAGE_MAP.get(ext.lower())
-
-    if lang_name:
-        # Try processing with tree-sitter via the language pack
-        # Ensure lang_name is of type SupportedLanguage if your map is typed
-        return extract_elements_with_tree_sitter(file_path, lang_name)
-    else:
-        # Fallback for unsupported or non-code files
-        print(f"No specific parser mapped for extension '{ext}'. Skipping {file_path}.")
-        # return process_non_python_file(file_path) # Or just return empty
-        return []
-
-
 def index_files(file_paths: List[str]) -> List[Dict[str, Any]]:
     """
     Index multiple files and return all code elements.
     """
     all_elements = []
     for file_path in file_paths:
-        elements = process_file(file_path)
+        elements = process_files.process_file(file_path)
         all_elements.extend(elements)
 
     return all_elements
